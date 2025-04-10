@@ -1,7 +1,7 @@
 import os
 
-app_token = os.getenv('APP_TOKEN')
-bot_token = os.getenv('BOT_TOKEN')
+app_token= os.getenv('SLACK_APP_TOKEN')
+bot_token= os.getenv('SLACK_BOT_TOKEN')
 
 from langchain_community.document_loaders import UnstructuredExcelLoader
 from langchain_google_genai import GoogleGenerativeAI, HarmBlockThreshold, HarmCategory
@@ -73,7 +73,7 @@ Tu base de conocimiento es la siguiente, recuerda solo responder informacion que
 # Configuración de Google Drive
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 FOLDER_ID = '1O297YnAdRz0iwber4ey1NC3xrlyzTn7Y'
-DOWNLOAD_PATH = 'descargas_drive'
+DOWNLOAD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'descargas_drive')
 TOKEN_PICKLE = 'token.pickle'
 STATE_FILE = 'drive_sync_state.pkl'
 CHECK_INTERVAL_SECONDS = 86400  # 24 horas
@@ -178,6 +178,14 @@ def check_drive_files(service, folder_id, download_path, current_state):
     cambios = False
 
     try:
+        logging.info(f"Verificando archivos en la carpeta de Drive ID: {folder_id}")
+        logging.info(f"Directorio de descarga configurado: {download_path}")
+        
+        # Asegurar que el directorio de descargas existe
+        if not os.path.exists(download_path):
+            os.makedirs(download_path, exist_ok=True)
+            logging.info(f"Directorio creado durante verificación: {download_path}")
+        
         query = f"'{folder_id}' in parents and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed = false"
         results = service.files().list(
             q=query,
@@ -191,6 +199,11 @@ def check_drive_files(service, folder_id, download_path, current_state):
             ids_in_drive = set()
         else:
             logging.info(f"Archivos .xlsx encontrados en Drive: {len(items)}")
+            
+            # Listar archivos encontrados
+            for item in items:
+                logging.info(f"Archivo en Drive: {item['name']} (ID: {item['id']})")
+            
             drive_files_map = {item['id']: {'name': item['name'], 'modifiedTime': item['modifiedTime']} for item in items}
             ids_in_drive = set(drive_files_map.keys())
 
@@ -198,9 +211,15 @@ def check_drive_files(service, folder_id, download_path, current_state):
                 file_name = file_info['name']
                 drive_modified_time = file_info['modifiedTime']
                 local_file_path = os.path.join(download_path, file_name)
-
-                if file_id not in current_state or current_state[file_id] != drive_modified_time:
-                    if file_id not in current_state:
+                
+                # Forzar descarga en el primer ciclo o si no existe localmente
+                force_download = (len(current_state) == 0) or (not os.path.exists(local_file_path))
+                
+                if force_download or file_id not in current_state or current_state[file_id] != drive_modified_time:
+                    if force_download:
+                        logging.info(f"Forzando descarga de: {file_name}")
+                        added_count += 1
+                    elif file_id not in current_state:
                         logging.info(f"Archivo nuevo detectado: {file_name}")
                         added_count += 1
                     else:
@@ -210,9 +229,17 @@ def check_drive_files(service, folder_id, download_path, current_state):
                     if download_file(service, file_id, file_name, local_file_path):
                         new_state[file_id] = drive_modified_time
                         cambios = True
+                        logging.info(f"Archivo descargado exitosamente: {local_file_path}")
                     else:
                         logging.warning(f"Fallo al descargar {file_name}, se reintentará en el próximo ciclo.")
 
+        # Listar archivos locales después de la descarga
+        if os.path.exists(download_path):
+            archivos_locales = glob.glob(os.path.join(download_path, "*.xlsx"))
+            logging.info(f"Archivos Excel locales después de la verificación: {len(archivos_locales)}")
+            for archivo in archivos_locales:
+                logging.info(f"Archivo local: {archivo}")
+        
         ids_in_state = set(new_state.keys())
         ids_to_remove_from_state = ids_in_state - ids_in_drive
         if ids_to_remove_from_state:
@@ -220,6 +247,7 @@ def check_drive_files(service, folder_id, download_path, current_state):
                 if id_to_remove in new_state:
                     del new_state[id_to_remove]
                     cambios = True
+                    logging.info(f"Eliminando del estado el archivo con ID: {id_to_remove}")
 
         return new_state, added_count, updated_count, cambios
 
@@ -240,13 +268,37 @@ def monitoreo_drive():
         service = build('drive', 'v3', credentials=creds)
         logging.info("Autenticación exitosa y servicio de Drive creado.")
 
+        # Asegurar que el directorio de descargas existe
         if not os.path.exists(DOWNLOAD_PATH):
-            os.makedirs(DOWNLOAD_PATH)
+            os.makedirs(DOWNLOAD_PATH, exist_ok=True)
+            logging.info(f"Directorio creado durante monitoreo: {DOWNLOAD_PATH}")
 
         current_state = load_state()
         logging.info(f"Estado inicial cargado con {len(current_state)} archivos rastreados.")
 
+        # Verificar archivos en la primera ejecución
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        logging.info(f"Verificando archivos en Drive ({now})")
+        new_state, added, updated, cambios = check_drive_files(service, FOLDER_ID, DOWNLOAD_PATH, current_state)
+
+        if cambios:
+            logging.info("Se detectaron cambios en los archivos. Actualizando estado...")
+            save_state(new_state)
+            current_state = new_state
+            logging.info(f"Resumen inicial: {added} archivos agregados, {updated} archivos actualizados.")
+            
+            # Actualizar documentos y system prompt
+            cargar_documentos()
+            docs_actualizados.set()
+        else:
+            if added == 0 and updated == 0:
+                logging.info("No se detectaron cambios en los archivos en la verificación inicial.")
+
+        # Ciclo de monitoreo continuo
         while True:
+            logging.info(f"Esperando {CHECK_INTERVAL_SECONDS} segundos para la próxima verificación...")
+            time.sleep(CHECK_INTERVAL_SECONDS)
+            
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             logging.info(f"Verificando cambios en Drive ({now})")
             new_state, added, updated, cambios = check_drive_files(service, FOLDER_ID, DOWNLOAD_PATH, current_state)
@@ -264,9 +316,6 @@ def monitoreo_drive():
                 if added == 0 and updated == 0:
                     logging.info("No se detectaron cambios en los archivos.")
 
-            logging.info(f"Esperando {CHECK_INTERVAL_SECONDS} segundos para la próxima verificación...")
-            time.sleep(CHECK_INTERVAL_SECONDS)
-
     except KeyboardInterrupt:
         logging.info("Monitoreo de Drive interrumpido.")
         if 'current_state' in locals():
@@ -279,17 +328,40 @@ def monitoreo_drive():
 def cargar_documentos():
     global docs_string, system_prompt, ultimo_update, llm
     
+    ruta_actual = os.getcwd()
+    logging.info(f"Directorio actual: {ruta_actual}")
+    logging.info(f"Ruta de descargas configurada: {DOWNLOAD_PATH}")
+    
     logging.info("Cargando documentos Excel...")
-    archivos_excel = glob.glob(f"{DOWNLOAD_PATH}/*.xlsx")
+    
+    # Asegurar que el directorio de descargas existe
+    if not os.path.exists(DOWNLOAD_PATH):
+        os.makedirs(DOWNLOAD_PATH, exist_ok=True)
+        logging.info(f"Directorio creado: {DOWNLOAD_PATH}")
+    
+    # Lista todos los archivos en el directorio de descargas 
+    logging.info(f"Contenido del directorio {DOWNLOAD_PATH}:")
+    if os.path.exists(DOWNLOAD_PATH):
+        archivos_dir = os.listdir(DOWNLOAD_PATH)
+        for archivo in archivos_dir:
+            logging.info(f"- {archivo}")
+    
+    # Buscar archivos Excel
+    archivos_excel = glob.glob(os.path.join(DOWNLOAD_PATH, "*.xlsx"))
+    logging.info(f"Archivos Excel encontrados: {len(archivos_excel)}")
+    
     if not archivos_excel:
-        archivos_excel = glob.glob("./*.xlsx")  # Fallback a directorio actual
+        logging.warning("No se encontraron Excel en la ruta principal, buscando en directorio actual...")
+        archivos_excel = glob.glob("*.xlsx")
     
     todos_docs = []
     for archivo in archivos_excel:
         try:
+            logging.info(f"Procesando archivo: {archivo}")
             loader = UnstructuredExcelLoader(archivo, mode="elements")
             docs = loader.load()
             todos_docs.extend(docs)
+            logging.info(f"Archivo {os.path.basename(archivo)} cargado con {len(docs)} elementos")
         except Exception as e:
             logging.error(f"Error al cargar {archivo}: {e}")
     
@@ -298,11 +370,15 @@ def cargar_documentos():
         system_prompt = prompt_base + docs_string + "\n" 
         ultimo_update = time.time()
         logging.info(f"Documentos cargados: {len(todos_docs)} elementos de {len(archivos_excel)} archivos")
-        
-        # Inicializar o actualizar el modelo LLM
-        inicializar_llm()
     else:
         logging.warning("No se encontraron documentos para cargar")
+        docs_string = ""
+        system_prompt = prompt_base + "\n"
+        ultimo_update = time.time()
+        logging.info("Usando prompt base sin documentos adicionales")
+    
+    # Inicializar o actualizar el modelo LLM
+    inicializar_llm()
 
 def inicializar_llm():
     global llm
@@ -629,8 +705,33 @@ def health_check():
             time.sleep(60)  # Si hay error, esperar menos tiempo antes de reintentar
 
 if __name__ == "__main__":
+    # Asegurar que el directorio de descargas existe
+    if not os.path.exists(DOWNLOAD_PATH):
+        os.makedirs(DOWNLOAD_PATH, exist_ok=True)
+        logging.info(f"Directorio de descargas creado: {DOWNLOAD_PATH}")
+    else:
+        logging.info(f"Usando directorio de descargas existente: {DOWNLOAD_PATH}")
+    
+    # Mostrar información del entorno
+    logging.info(f"Directorio actual: {os.getcwd()}")
+    logging.info(f"Directorio de descargas: {DOWNLOAD_PATH}")
+    
+    # Verificar si hay archivos Excel directamente
+    excel_files = glob.glob(os.path.join(DOWNLOAD_PATH, "*.xlsx"))
+    logging.info(f"Archivos Excel encontrados directamente: {len(excel_files)}")
+    if excel_files:
+        for file in excel_files:
+            logging.info(f"Excel encontrado: {file}")
+    
     # Cargar documentos al iniciar
     cargar_documentos()
+    print(system_prompt)
+    # Imprimir longitud del system prompt para verificar
+    if system_prompt:
+        logging.info(f"System prompt cargado con {len(system_prompt)} caracteres")
+        print(f"System prompt cargado con {len(system_prompt)} caracteres")
+    else:
+        logging.warning("System prompt no fue cargado correctamente")
     
     # Iniciar el monitoreo de Drive en un hilo separado
     drive_thread = threading.Thread(target=monitoreo_drive, daemon=True)
