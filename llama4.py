@@ -366,11 +366,6 @@ def convertir_a_slack_markdown(texto):
     
     return texto
 
-@app.event("message")
-def handle_message_events(body, logger):
-    # Desactivado para que el bot solo responda cuando sea mencionado con @chaski
-    pass
-
 @app.event("app_mention")
 def handle_app_mention_events(body, logger):
     try:
