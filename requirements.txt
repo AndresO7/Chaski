@@ -11,3 +11,4 @@ openpyxl
 unstructured[xlsx]
 networkx
 flask
+openai
