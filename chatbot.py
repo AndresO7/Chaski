@@ -27,6 +27,8 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 import re
 import random
+from flask import Flask
+from threading import Thread
 
 # Configurar logging con timestamp
 class CustomFormatter(logging.Formatter):
@@ -91,6 +93,17 @@ system_prompt = ""
 docs_actualizados = threading.Event()
 llm = None
 conversaciones = {}
+
+# Crear app Flask para health checks
+app_health = Flask(__name__)
+
+@app_health.route('/')
+def home():
+    return "Bot de Slack en ejecución"
+
+def run_health_server():
+    port = int(os.environ.get('PORT', 10000))
+    app_health.run(host='0.0.0.0', port=port)
 
 def authenticate():
     creds = None
@@ -722,6 +735,10 @@ if __name__ == "__main__":
     if excel_files:
         for file in excel_files:
             logging.info(f"Excel encontrado: {file}")
+    
+    # Iniciar servidor HTTP para health checks
+    Thread(target=run_health_server, daemon=True).start()
+    logging.info(f"Servidor HTTP para health checks iniciado en el puerto {os.environ.get('PORT', 10000)}")
     
     # Cargar documentos al iniciar
     cargar_documentos()

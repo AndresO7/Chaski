@@ -10,3 +10,4 @@ unstructured
 openpyxl
 unstructured[xlsx]
 networkx
+flask
