@@ -1,7 +1,7 @@
 import os
 
-app_token= os.getenv('SLACK_APP_TOKEN')
-bot_token= os.getenv('SLACK_BOT_TOKEN')
+app_token= os.getenv('APP_TOKEN')
+bot_token= os.getenv('BOT_TOKEN')
 
 from langchain_community.document_loaders import UnstructuredExcelLoader
 from langchain_google_genai import GoogleGenerativeAI, HarmBlockThreshold, HarmCategory
