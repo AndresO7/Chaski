@@ -1,5 +1,3 @@
-
-
 from langchain_community.document_loaders import UnstructuredExcelLoader
 import glob
 import os
@@ -18,9 +16,21 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
+from flask import Flask
 
 app_token= os.getenv('APP_TOKEN')
 bot_token=os.getenv('BOT_TOKEN')
+
+# Crear app Flask para health checks
+app_health = Flask(__name__)
+
+@app_health.route('/')
+def home():
+    return "Bot de Slack en ejecución"
+
+def run_health_server():
+    port = int(os.environ.get('PORT', 10000))
+    app_health.run(host='0.0.0.0', port=port)
 
 prompt_base = """
 Eres el asistente virtual de Kushki, tu nombres es Chaski eres un asistente amigable y confiable, cercano con el equipo de kushki, tu mision es ayudar al equipo de kushki respondiendo sus inquietudes, dudas, y preguntas, tu base de conocimiento, que sera una seria de excels, que contienen informacion relevante para el equipo de kushki.
@@ -454,6 +464,10 @@ if __name__ == "__main__":
     # Iniciar el monitoreo de Drive en un hilo separado
     drive_thread = threading.Thread(target=monitoreo_drive, daemon=True)
     drive_thread.start()
+    
+    # Iniciar el servidor de health checks en un hilo separado
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
     
     # Iniciar la aplicación en modo Socket
     handler = SocketModeHandler(app, app_token)
