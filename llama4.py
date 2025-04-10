@@ -368,49 +368,8 @@ def convertir_a_slack_markdown(texto):
 
 @app.event("message")
 def handle_message_events(body, logger):
-    try:
-        if "channel" in body["event"] and "text" in body["event"]:
-            channel_id = body["event"]["channel"]
-            user_id = body["event"]["user"]
-            texto = body["event"]["text"]
-            
-            # Ignorar mensajes del bot
-            if "bot_id" in body["event"]:
-                return
-            
-            # Inicializar historial si es necesario
-            if user_id not in conversaciones:
-                conversaciones[user_id] = []
-            
-            # Generar respuesta
-            respuesta = generar_respuesta(texto, conversaciones[user_id])
-            
-            # Convertir al formato de markdown de Slack
-            respuesta_slack = convertir_a_slack_markdown(respuesta)
-            
-            # Actualizar historial
-            conversaciones[user_id].extend([
-                {"role": "user", "content": texto},
-                {"role": "assistant", "content": respuesta}
-            ])
-            conversaciones[user_id] = limitar_historial(conversaciones[user_id])
-            
-            # Enviar respuesta al canal
-            app.client.chat_postMessage(
-                channel=channel_id,
-                text=respuesta_slack,  # Fallback para notificaciones
-                blocks=[
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": respuesta_slack
-                        }
-                    }
-                ]
-            )
-    except Exception as e:
-        logger.error(f"Error al procesar mensaje: {e}")
+    # Desactivado para que el bot solo responda cuando sea mencionado con @chaski
+    pass
 
 @app.event("app_mention")
 def handle_app_mention_events(body, logger):
