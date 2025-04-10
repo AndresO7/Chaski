@@ -1,3 +1,5 @@
+import os
+
 app_token = os.getenv('APP_TOKEN')
 bot_token = os.getenv('BOT_TOKEN')
 
