@@ -1,0 +1,16 @@
+# Entorno virtual
+venv/
+
+# Variables de entorno
+.env
+
+# Archivos de estado
+*.pkl
+*.pickle
+credentials.json
+# Pycache
+__pycache__/
+# Drive
+descargas_drive/
+
+

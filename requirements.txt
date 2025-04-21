@@ -1,0 +1,11 @@
+langchain-community
+langchain-google-genai
+langchain
+slack-bolt
+google-auth
+google-auth-oauthlib
+google-api-python-client
+unstructured
+openpyxl
+unstructured[xlsx]
+networkx
