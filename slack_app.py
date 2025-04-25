@@ -8,6 +8,13 @@ import chatbot
 
 
 app = App(token=config.SLACK_BOT_TOKEN)
+
+@app.event("message")
+def handle_message_events(body, logger):
+    # Simple controlador para evitar errores de "unhandled request"
+    # El código original está comentado debajo
+    pass
+
 '''
 @app.event("message")
 def handle_message_events(body, say):

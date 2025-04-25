@@ -5,8 +5,7 @@ import threading
 import re
 
 from langchain_community.document_loaders import UnstructuredExcelLoader
-from langchain_google_genai import GoogleGenerativeAI, HarmBlockThreshold, HarmCategory
-from langchain_core.prompts import PromptTemplate
+from langchain_google_vertexai import VertexAI
 
 import config
 from logger_config import logger
@@ -83,9 +82,8 @@ def inicializar_llm():
     logger.info("Inicializando/Actualizando modelo LLM...")
 
     try:
-        llm = GoogleGenerativeAI(
+        llm = VertexAI(
             model=config.MODEL_NAME,
-            google_api_key=config.GOOGLE_API_KEY,
             temperature=config.LLM_TEMPERATURE
         )
         logger.info(f"Modelo LLM ({config.MODEL_NAME}) inicializado/actualizado.")
@@ -116,7 +114,6 @@ def generar_respuesta(pregunta, historial_mensajes):
         history_text += f"{role}: {msg['content']}\n"
  
     full_prompt = f"{system_prompt}\n{history_text}Usuario: {pregunta}\nAsistente:"
-    print(system_prompt)
     try:
         with llm_mutex:
             logger.debug(f"Enviando prompt al LLM (longitud: {len(full_prompt)}) ...")
