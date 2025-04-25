@@ -9,3 +9,4 @@ unstructured
 openpyxl
 unstructured[xlsx]
 networkx
+langchain-google-vertexai
