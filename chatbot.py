@@ -84,7 +84,8 @@ def inicializar_llm():
     try:
         llm = VertexAI(
             model=config.MODEL_NAME,
-            temperature=config.LLM_TEMPERATURE
+            temperature=config.LLM_TEMPERATURE,
+            project="chaski-457917"
         )
         logger.info(f"Modelo LLM ({config.MODEL_NAME}) inicializado/actualizado.")
     except Exception as e:
