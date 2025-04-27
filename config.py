@@ -28,7 +28,7 @@ HISTORY_MAX_MESSAGES = 20
 # --- INICIO: Nueva lista de usuarios autorizados ---
 # Lista de IDs de usuario de Slack autorizados para interactuar con el bot
 SLACK_AUTHORIZED_USERS = [
-    "U08B2TPCY4C",
+  
     "U08JKL1TEE9",
     "UN8K24ZGR",
     "U02AYGA1HHU",
