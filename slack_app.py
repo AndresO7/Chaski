@@ -23,6 +23,12 @@ def handle_message_events(body, say):
     user_id = event["user"]
     texto = event["text"]
 
+    # --- INICIO: Verificación de usuario autorizado ---
+    if user_id not in config.SLACK_AUTHORIZED_USERS:
+        logger.warning(f"Usuario {user_id} no autorizado intentó interactuar (mensaje directo). Ignorando.")
+        return # No procesar si el usuario no está en la lista
+    # --- FIN: Verificación de usuario autorizado ---
+
     if "bot_id" in event or event.get("subtype") == "message_changed":
         return
 
@@ -71,6 +77,13 @@ def handle_app_mention_events(body, say):
     channel_id = event["channel"]
     user_id = event["user"]
     texto_completo = event["text"]
+
+    # --- INICIO: Verificación de usuario autorizado ---
+    if user_id not in config.SLACK_AUTHORIZED_USERS:
+        logger.warning(f"Usuario {user_id} no autorizado intentó interactuar (mención). Ignorando.")
+        return # No procesar si el usuario no está en la lista
+    # --- FIN: Verificación de usuario autorizado ---
+
     try:
         bot_user_id = body["authorizations"][0]["user_id"]
         texto_limpio = re.sub(rf'^<@{bot_user_id}>\s*', '', texto_completo).strip()

@@ -25,6 +25,17 @@ LLM_MAX_OUTPUT_TOKENS = 2048
 SLACK_MAX_MESSAGE_LENGTH = 2900
 HISTORY_MAX_MESSAGES = 20
 
+# --- INICIO: Nueva lista de usuarios autorizados ---
+# Lista de IDs de usuario de Slack autorizados para interactuar con el bot
+SLACK_AUTHORIZED_USERS = [
+    "U08B2TPCY4C",
+    "U08JKL1TEE9",
+    "UN8K24ZGR",
+    "U02AYGA1HHU",
+    "U01HLRZLP70",
+    "U03JECFEESC",
+]
+# --- FIN: Nueva lista de usuarios autorizados ---
 
 required_vars = ['SLACK_APP_TOKEN', 'SLACK_BOT_TOKEN', 'GOOGLE_API_KEY', 'GOOGLE_DRIVE_FOLDER_ID']
 missing_vars = [var for var in required_vars if not globals().get(var)]
