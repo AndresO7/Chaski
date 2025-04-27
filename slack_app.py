@@ -26,6 +26,7 @@ def handle_message_events(body, say):
     # --- INICIO: Verificación de usuario autorizado ---
     if user_id not in config.SLACK_AUTHORIZED_USERS:
         logger.warning(f"Usuario {user_id} no autorizado intentó interactuar (mensaje directo). Ignorando.")
+        say(channel=channel_id, text="Lo siento, no estás autorizado para interactuar conmigo.") # Mensaje al usuario
         return # No procesar si el usuario no está en la lista
     # --- FIN: Verificación de usuario autorizado ---
 
@@ -81,6 +82,7 @@ def handle_app_mention_events(body, say):
     # --- INICIO: Verificación de usuario autorizado ---
     if user_id not in config.SLACK_AUTHORIZED_USERS:
         logger.warning(f"Usuario {user_id} no autorizado intentó interactuar (mención). Ignorando.")
+        say(channel=channel_id, text="Lo siento, no estás autorizado para interactuar conmigo.") # Mensaje al usuario
         return # No procesar si el usuario no está en la lista
     # --- FIN: Verificación de usuario autorizado ---
 
