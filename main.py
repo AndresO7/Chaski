@@ -10,13 +10,6 @@ from slack_app import start_slack_app
 if __name__ == "__main__":
     logger.info("Iniciando Chaski Bot...")
 
-    if not os.path.exists(config.DOWNLOAD_PATH):
-        try:
-            os.makedirs(config.DOWNLOAD_PATH, exist_ok=True)
-            logger.info(f"Directorio de descargas creado: {config.DOWNLOAD_PATH}")
-        except OSError as e:
-            logger.error(f"No se pudo crear directorio {config.DOWNLOAD_PATH}: {e}. Funcionalidad limitada.")
-
     logger.info("Cargando documentos iniciales...")
     cargar_documentos()
 
