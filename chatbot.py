@@ -5,7 +5,8 @@ import re
 import mimetypes
 
 from langchain_community.document_loaders import UnstructuredFileIOLoader
-from langchain_google_vertexai import VertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
+
 
 import config
 from logger_config import logger
@@ -99,10 +100,9 @@ def inicializar_llm():
     logger.info("Inicializando/Actualizando modelo LLM...")
 
     try:
-        llm = VertexAI(
+        llm = ChatGoogleGenerativeAI(
             model=config.MODEL_NAME,
             temperature=config.LLM_TEMPERATURE,
-            project="chaski-457917"
         )
         logger.info(f"Modelo LLM ({config.MODEL_NAME}) inicializado/actualizado.")
     except Exception as e:
@@ -136,8 +136,8 @@ def generar_respuesta(pregunta, historial_mensajes):
         with llm_mutex:
             logger.debug(f"Enviando prompt al LLM (longitud: {len(full_prompt)}) ...")
             respuesta = llm.invoke(full_prompt)
-            logger.info(f"Respuesta recibida del LLM: {respuesta[:50]}...")
-        return respuesta
+            logger.info(f"Respuesta recibida del LLM: {respuesta.content[:50]}...")
+        return respuesta.content
     except Exception as e:
         logger.error(f"Error al invocar el LLM: {e}")
         # Manejar error específico de tamaño de payload
