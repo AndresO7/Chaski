@@ -1,15 +1,17 @@
 import os
-import glob
 import time
 import threading
 import re
+import mimetypes
 
-from langchain_community.document_loaders import UnstructuredExcelLoader
-from langchain_google_vertexai import VertexAI
+from langchain_community.document_loaders import UnstructuredFileIOLoader
+from langchain_google_genai import ChatGoogleGenerativeAI
+
 
 import config
 from logger_config import logger
 from prompts import prompt_base
+from google_drive import file_memory_storage
 
 # Estado global del chatbot
 docs_string = ""
@@ -23,43 +25,59 @@ llm_mutex = threading.Lock() # Mutex para acceso concurrente al LLM
 def cargar_documentos():
     global docs_string, system_prompt, ultimo_update
 
-    logger.info(f"Cargando documentos Excel desde: {config.DOWNLOAD_PATH}")
+    logger.info("Cargando documentos desde memoria")
 
-    if not os.path.exists(config.DOWNLOAD_PATH):
-        logger.warning(f"El directorio de descargas {config.DOWNLOAD_PATH} no existe. Creándolo.")
-        try:
-            os.makedirs(config.DOWNLOAD_PATH, exist_ok=True)
-        except OSError as e:
-            logger.error(f"No se pudo crear el directorio de descargas {config.DOWNLOAD_PATH}: {e}")
-            docs_string = ""
-            system_prompt = prompt_base + "\n"
-            ultimo_update = time.time()
-            logger.warning("Usando prompt base sin documentos adicionales.")
-            inicializar_llm()
-            return
-
-    archivos_excel = glob.glob(os.path.join(config.DOWNLOAD_PATH, "*.xlsx"))
-    logger.info(f"Archivos Excel encontrados: {len(archivos_excel)}")
-
-    if not archivos_excel:
-        logger.warning(f"No se encontraron archivos Excel en {config.DOWNLOAD_PATH}.")
+    if not file_memory_storage:
+        logger.warning("No hay archivos en memoria para cargar.")
         docs_string = ""
         system_prompt = prompt_base + "\n"
         ultimo_update = time.time()
-        logger.info("Usando prompt base sin documentos adicionales.")
+        logger.warning("Usando prompt base sin documentos adicionales.")
         inicializar_llm()
         return
 
+    archivos = list(file_memory_storage.keys())
+    logger.info(f"Archivos encontrados en memoria: {len(archivos)}")
+
     todos_docs = []
-    for archivo in archivos_excel:
+    for archivo_nombre in archivos:
         try:
-            logger.info(f"Procesando archivo: {archivo}")
-            loader = UnstructuredExcelLoader(archivo, mode="elements")
-            docs = loader.load()
-            todos_docs.extend(docs)
-            logger.info(f"Archivo {os.path.basename(archivo)} cargado con {len(docs)} elementos.")
+            archivo_contenido = file_memory_storage[archivo_nombre]
+            extension = os.path.splitext(archivo_nombre)[1].lower()
+            
+            logger.info(f"Procesando archivo en memoria: {archivo_nombre} (extensión: {extension})")
+            
+            # Reiniciar el puntero al inicio del archivo en memoria
+            archivo_contenido.seek(0)
+            
+            # Usar UnstructuredFileIOLoader para trabajar con archivos en memoria
+            # El modo 'elements' permite extraer elementos estructurados del documento
+            loader = UnstructuredFileIOLoader(
+                archivo_contenido, 
+                mode="elements"
+            )
+            
+            try:
+                docs = loader.load()
+                todos_docs.extend(docs)
+                logger.info(f"Archivo {archivo_nombre} cargado con {len(docs)} elementos.")
+            except Exception as e:
+                logger.error(f"Error durante la carga de {archivo_nombre}: {e}")
+                # Si falla el primer intento, intentamos de nuevo con diferentes configuraciones
+                try:
+                    archivo_contenido.seek(0)
+                    loader = UnstructuredFileIOLoader(
+                        archivo_contenido,
+                        mode="single"
+                    )
+                    docs = loader.load()
+                    todos_docs.extend(docs)
+                    logger.info(f"Segundo intento exitoso para {archivo_nombre}: {len(docs)} elementos.")
+                except Exception as e2:
+                    logger.error(f"Error en segundo intento para {archivo_nombre}: {e2}")
+            
         except Exception as e:
-            logger.error(f"Error al cargar o procesar el archivo {archivo}: {e}")
+            logger.error(f"Error al procesar el archivo {archivo_nombre}: {e}")
 
     if todos_docs:
         docs_string = "\n".join([doc.page_content for doc in todos_docs])
@@ -68,7 +86,7 @@ def cargar_documentos():
         logger.info(f"Documentos cargados: {len(todos_docs)} elementos. Longitud texto: {len(docs_string)} chars.")
         logger.debug(f"Muestra contenido: {docs_string[:200]}...") # Muestra para depuración
     else:
-        logger.warning("Se encontraron archivos Excel pero no se pudo extraer contenido.")
+        logger.warning("Se encontraron archivos pero no se pudo extraer contenido.")
         docs_string = ""
         system_prompt = prompt_base + "\n"
         ultimo_update = time.time()
@@ -82,10 +100,9 @@ def inicializar_llm():
     logger.info("Inicializando/Actualizando modelo LLM...")
 
     try:
-        llm = VertexAI(
+        llm = ChatGoogleGenerativeAI(
             model=config.MODEL_NAME,
             temperature=config.LLM_TEMPERATURE,
-            project="chaski-457917"
         )
         logger.info(f"Modelo LLM ({config.MODEL_NAME}) inicializado/actualizado.")
     except Exception as e:
@@ -119,8 +136,8 @@ def generar_respuesta(pregunta, historial_mensajes):
         with llm_mutex:
             logger.debug(f"Enviando prompt al LLM (longitud: {len(full_prompt)}) ...")
             respuesta = llm.invoke(full_prompt)
-            logger.info(f"Respuesta recibida del LLM: {respuesta[:50]}...")
-        return respuesta
+            logger.info(f"Respuesta recibida del LLM: {respuesta.content[:50]}...")
+        return respuesta.content
     except Exception as e:
         logger.error(f"Error al invocar el LLM: {e}")
         # Manejar error específico de tamaño de payload

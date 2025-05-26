@@ -8,5 +8,7 @@ google-api-python-client
 unstructured
 openpyxl
 unstructured[xlsx]
+unstructured[pdf]
+unstructured[docx]
 networkx
 langchain-google-vertexai
