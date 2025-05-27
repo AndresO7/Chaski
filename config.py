@@ -34,6 +34,8 @@ SLACK_AUTHORIZED_USERS = [
     "U02AYGA1HHU",
     "U01HLRZLP70",
     "U03JECFEESC",
+    "U08CTV4TDF0",
+    "U02DNRL0FG8",
 ]
 # --- FIN: Nueva lista de usuarios autorizados ---
 
