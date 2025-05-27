@@ -100,6 +100,40 @@ def download_file_to_memory(service, file_id, file_name):
         logger.error(f"Ocurrió un error inesperado al descargar {file_name}: {e}")
         return False
 
+def get_all_folders_recursive(service, folder_id, visited_folders=None):
+    if visited_folders is None:
+        visited_folders = set()
+    
+    if folder_id in visited_folders:
+        return []
+    
+    visited_folders.add(folder_id)
+    all_folders = [folder_id]
+    
+    try:
+        query = f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed = false"
+        results = service.files().list(
+            q=query,
+            pageSize=100,
+            fields="nextPageToken, files(id, name)"
+        ).execute()
+        
+        subfolders = results.get('files', [])
+        logger.info(f"Encontradas {len(subfolders)} subcarpetas en carpeta ID: {folder_id}")
+        
+        for subfolder in subfolders:
+            subfolder_id = subfolder['id']
+            subfolder_name = subfolder['name']
+            logger.info(f"Explorando subcarpeta: {subfolder_name} (ID: {subfolder_id})")
+            
+            recursive_folders = get_all_folders_recursive(service, subfolder_id, visited_folders)
+            all_folders.extend(recursive_folders)
+            
+    except Exception as e:
+        logger.error(f"Error al obtener subcarpetas de {folder_id}: {e}")
+    
+    return all_folders
+
 def check_drive_files(service, current_state):
     new_state = current_state.copy()
     updated_count = 0
@@ -108,32 +142,43 @@ def check_drive_files(service, current_state):
 
     try:
         logger.info(f"Verificando archivos en la carpeta de Drive ID: {config.GOOGLE_DRIVE_FOLDER_ID}")
-
-        # Query modificada para incluir XLSX, PDF y DOCX
-        query = f"'{config.GOOGLE_DRIVE_FOLDER_ID}' in parents and ("
-        query += "mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or " # xlsx
-        query += "mimeType='application/pdf' or " # pdf
-        query += "mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'" # docx
-        query += ") and trashed = false"
         
-        results = service.files().list(
-            q=query,
-            pageSize=100,
-            fields="nextPageToken, files(id, name, modifiedTime, mimeType)"
-        ).execute()
-        items = results.get('files', [])
+        all_folder_ids = get_all_folders_recursive(service, config.GOOGLE_DRIVE_FOLDER_ID)
+        logger.info(f"Total de carpetas para verificar (incluyendo subcarpetas): {len(all_folder_ids)}")
+        
+        all_items = []
+        
+        for folder_id in all_folder_ids:
+            query = f"'{folder_id}' in parents and ("
+            query += "mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or "
+            query += "mimeType='application/pdf' or "
+            query += "mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'"
+            query += ") and trashed = false"
+            
+            results = service.files().list(
+                q=query,
+                pageSize=100,
+                fields="nextPageToken, files(id, name, modifiedTime, mimeType, parents)"
+            ).execute()
+            
+            folder_items = results.get('files', [])
+            if folder_items:
+                logger.info(f"Encontrados {len(folder_items)} archivos en carpeta ID: {folder_id}")
+                all_items.extend(folder_items)
 
-        if not items:
-            logger.info(f"No se encontraron archivos (xlsx/pdf/docx) en la carpeta ID: {config.GOOGLE_DRIVE_FOLDER_ID}")
+        if not all_items:
+            logger.info(f"No se encontraron archivos (xlsx/pdf/docx) en la carpeta principal ni subcarpetas")
             ids_in_drive = set()
+            drive_files_map = {}
         else:
-            logger.info(f"Archivos encontrados en Drive: {len(items)}")
+            logger.info(f"Total de archivos encontrados en Drive: {len(all_items)}")
             drive_files_map = {
                 item['id']: {
                     'name': item['name'], 
                     'modifiedTime': item['modifiedTime'],
-                    'mimeType': item['mimeType']
-                } for item in items
+                    'mimeType': item['mimeType'],
+                    'parents': item.get('parents', [])
+                } for item in all_items
             }
             ids_in_drive = set(drive_files_map.keys())
 
@@ -142,7 +187,6 @@ def check_drive_files(service, current_state):
                 drive_modified_time = file_info['modifiedTime']
                 mime_type = file_info['mimeType']
 
-                # Registro del tipo MIME para diagnóstico
                 logger.debug(f"Archivo {file_name} tiene MIME type: {mime_type}")
 
                 force_download = (len(current_state) == 0) or (file_name not in file_memory_storage)
