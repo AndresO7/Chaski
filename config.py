@@ -36,6 +36,11 @@ SLACK_AUTHORIZED_USERS = [
     "U03JECFEESC",
     "U08CTV4TDF0",
     "U02DNRL0FG8",
+    "U01MJH40SA3",  # elizabeth.rosero@kushkipagos.com
+    "U021JATU6MD",  # josue.baldassari@kushkipagos.com
+    "U01T9CV8JEL",  # giacomo.orizzonte@kushkipagos.com
+    "U2ZQRT5EC",    # patricio@kushkipagos.com
+    "U03BK7NGP62",  # luzdary.vanegas@kushkipagos.com
 ]
 # --- FIN: Nueva lista de usuarios autorizados ---
 
