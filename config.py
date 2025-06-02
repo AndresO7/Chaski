@@ -23,7 +23,7 @@ LLM_TOP_K = 40
 LLM_TOP_P = 0.95
 LLM_MAX_OUTPUT_TOKENS = 2048
 SLACK_MAX_MESSAGE_LENGTH = 2900
-HISTORY_MAX_MESSAGES = 20
+HISTORY_MAX_MESSAGES = 7
 
 # --- INICIO: Nueva lista de usuarios autorizados ---
 # Lista de IDs de usuario de Slack autorizados para interactuar con el bot

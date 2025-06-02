@@ -132,19 +132,49 @@ def generar_respuesta(pregunta, historial_mensajes):
         history_text += f"{role}: {msg['content']}\n"
  
     full_prompt = f"{system_prompt}\n{history_text}Usuario: {pregunta}\nAsistente:"
-    try:
-        with llm_mutex:
-            logger.debug(f"Enviando prompt al LLM (longitud: {len(full_prompt)}) ...")
-            respuesta = llm.invoke(full_prompt)
-            logger.info(f"Respuesta recibida del LLM: {respuesta.content[:50]}...")
-        return respuesta.content
-    except Exception as e:
-        logger.error(f"Error al invocar el LLM: {e}")
-        # Manejar error específico de tamaño de payload
-        if "400" in str(e) and "request payload size" in str(e).lower():
-             logger.error("El tamaño del prompt excedió el límite del modelo.")
-             return "Lo siento, la conversación es demasiado larga. Intenta empezar de nuevo o simplificar la pregunta."
-        return "Lo siento, ocurrió un error inesperado."
+    
+    # Intentar generar respuesta con reinicio automático en caso de error 429
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with llm_mutex:
+                logger.debug(f"Enviando prompt al LLM (longitud: {len(full_prompt)}) ...")
+                respuesta = llm.invoke(full_prompt)
+                logger.info(f"Respuesta recibida del LLM: {respuesta.content[:50]}...")
+            return respuesta.content
+        except Exception as e:
+            logger.error(f"Error al invocar el LLM: {e}")
+            
+            # Detectar específicamente error 429
+            if "429" in str(e) or "quota" in str(e).lower() or "ResourceExhausted" in str(e):
+                logger.warning(f"Error 429 detectado (intento {attempt + 1}/{max_retries}). Reiniciando modelo LLM...")
+                
+                # Reiniciar el modelo LLM
+                llm = None
+                time.sleep(2)  # Esperar 2 segundos antes de reinicializar
+                inicializar_llm()
+                
+                if llm is None:
+                    return "Lo siento, el asistente no está disponible temporalmente debido a límites de cuota."
+                
+                # Si no es el último intento, continuar con el bucle
+                if attempt < max_retries - 1:
+                    logger.info("Modelo LLM reiniciado. Reintentando solicitud...")
+                    time.sleep(3)  # Esperar un poco más antes de reintentar
+                    continue
+                else:
+                    return "Lo siento, se excedió el límite de solicitudes. Por favor, intenta nuevamente en unos minutos."
+            
+            # Manejar error específico de tamaño de payload
+            elif "400" in str(e) and "request payload size" in str(e).lower():
+                logger.error("El tamaño del prompt excedió el límite del modelo.")
+                return "Lo siento, la conversación es demasiado larga. Intenta empezar de nuevo o simplificar la pregunta."
+            else:
+                # Para otros errores, no reintentar
+                return "Lo siento, ocurrió un error inesperado."
+    
+    # Si llegamos aquí, se agotaron todos los reintentos
+    return "Lo siento, no se pudo procesar tu solicitud después de varios intentos. Por favor, intenta más tarde."
 
 def limitar_historial(historial):
     if len(historial) > config.HISTORY_MAX_MESSAGES:
