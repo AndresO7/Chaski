@@ -1,6 +1,8 @@
 langchain-community
 langchain-google-genai
 langchain
+langchain-chroma
+chromadb
 slack-bolt
 google-auth
 google-auth-oauthlib
