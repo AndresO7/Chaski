@@ -95,21 +95,29 @@ def handle_app_mention_events(body, say):
 
     logger.info(f"Mención recibida en {channel_id} de {user_id}. Texto procesado: {texto_limpio[:50]}...")
 
-    if user_id not in chatbot.conversaciones:
-        logger.info(f"Nuevo usuario detectado (vía mención): {user_id}. Inicializando historial.")
-        chatbot.conversaciones[user_id] = []
+    # Gestión thread-safe de conversaciones
+    with chatbot.conversaciones_lock:
+        if user_id not in chatbot.conversaciones:
+            logger.info(f"Nuevo usuario detectado (vía mención): {user_id}. Inicializando historial.")
+            chatbot.conversaciones[user_id] = []
+        
+        # Copiar historial para uso en generación de respuesta
+        historial_actual = chatbot.conversaciones[user_id].copy()
 
-    respuesta_llm = chatbot.generar_respuesta(texto_limpio, chatbot.conversaciones[user_id])
+    # Generar respuesta con el nuevo sistema
+    respuesta_llm = chatbot.generar_respuesta(texto_limpio, historial_actual, user_id)
 
     respuesta_slack = chatbot.convertir_a_slack_markdown(respuesta_llm)
     partes_respuesta = chatbot.dividir_mensaje(respuesta_slack)
 
-    chatbot.conversaciones[user_id].extend([
-        {"role": "user", "content": texto_limpio}, 
-        {"role": "assistant", "content": respuesta_llm}
-    ])
-    chatbot.conversaciones[user_id] = chatbot.limitar_historial(chatbot.conversaciones[user_id])
-    logger.debug(f"Historial actualizado para {user_id} (vía mención). Tamaño: {len(chatbot.conversaciones[user_id])}.")
+    # Actualizar historial de forma thread-safe
+    with chatbot.conversaciones_lock:
+        chatbot.conversaciones[user_id].extend([
+            {"role": "user", "content": texto_limpio}, 
+            {"role": "assistant", "content": respuesta_llm}
+        ])
+        chatbot.conversaciones[user_id] = chatbot.limitar_historial(chatbot.conversaciones[user_id])
+        logger.debug(f"Historial actualizado para {user_id} (vía mención). Tamaño: {len(chatbot.conversaciones[user_id])}.")
 
     for i, parte in enumerate(partes_respuesta):
         try:

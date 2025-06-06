@@ -216,20 +216,36 @@ def check_drive_files(service, current_state):
 
                 logger.debug(f"Archivo {file_name} tiene MIME type: {mime_type}")
 
-                force_download = (len(current_state) == 0) or (file_name not in file_memory_storage)
+                # Verificar si el archivo ya existe según su tipo
+                force_download = (len(current_state) == 0)
+                if not force_download:
+                    if mime_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+                        # Para XLSX, verificar en memoria
+                        force_download = file_name not in file_memory_storage
+                    elif mime_type in ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
+                        # Para PDF/DOCX, verificar en disco
+                        file_path = os.path.join(config.DOWNLOAD_PATH, file_name)
+                        force_download = not os.path.exists(file_path)
 
                 if force_download or file_id not in current_state or current_state[file_id] != drive_modified_time:
-                    if force_download and file_name in file_memory_storage:
-                         logger.info(f"Archivo ya existe en memoria, forzando descarga de: {file_name}")
-                         updated_count += 1
-                    elif force_download:
-                        logger.info(f"Forzando descarga de nuevo archivo: {file_name}")
+                    if force_download:
+                        if mime_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+                            if file_name in file_memory_storage:
+                                logger.info(f"♻️ Archivo XLSX ya en memoria, forzando descarga: {file_name}")
+                            else:
+                                logger.info(f"🆕 Nuevo archivo XLSX para descargar: {file_name}")
+                        else:
+                            file_path = os.path.join(config.DOWNLOAD_PATH, file_name)
+                            if os.path.exists(file_path):
+                                logger.info(f"♻️ Archivo PDF/DOCX ya en disco, forzando descarga: {file_name}")
+                            else:
+                                logger.info(f"🆕 Nuevo archivo PDF/DOCX para descargar: {file_name}")
                         added_count += 1
                     elif file_id not in current_state:
-                        logger.info(f"Archivo nuevo detectado: {file_name}")
+                        logger.info(f"🆕 Archivo nuevo detectado: {file_name}")
                         added_count += 1
                     else:
-                        logger.info(f"Archivo modificado detectado: {file_name}")
+                        logger.info(f"📝 Archivo modificado detectado: {file_name}")
                         updated_count += 1
 
                     # Determinar método de descarga según el tipo de archivo
@@ -244,11 +260,14 @@ def check_drive_files(service, current_state):
                     if download_success:
                         new_state[file_id] = drive_modified_time
                         cambios = True
-                        logger.info(f"Estado actualizado para archivo: {file_name}")
+                        logger.info(f"✅ Estado actualizado para archivo: {file_name}")
                     else:
-                        logger.warning(f"Fallo al descargar {file_name}, se reintentará en el próximo ciclo.")
+                        logger.warning(f"❌ Fallo al descargar {file_name}, se reintentará en el próximo ciclo.")
                         if file_id in new_state:
                             del new_state[file_id]
+                else:
+                    # Archivo ya está actualizado
+                    logger.debug(f"⏭️ Archivo {file_name} ya está actualizado, saltando descarga")
 
         ids_in_state = set(new_state.keys())
         ids_to_remove_from_state = ids_in_state - ids_in_drive
@@ -313,11 +332,11 @@ def monitoreo_drive():
             save_state(new_state)
             current_state = new_state
             logger.info(f"Resumen inicial: {added} archivos agregados, {updated} archivos actualizados.")
-            chatbot.cargar_documentos()
+            chatbot.cargar_documentos(force_reload=True)
             chatbot.docs_actualizados.set()
         else:
             logger.info("No se detectaron cambios respecto al estado guardado. Cargando documentos existentes...")
-            chatbot.cargar_documentos()
+            chatbot.cargar_documentos(force_reload=False)
         while True:
             logger.info(f"Esperando {config.CHECK_INTERVAL_SECONDS} segundos para la próxima verificación de Drive...")
             time.sleep(config.CHECK_INTERVAL_SECONDS)
@@ -332,7 +351,7 @@ def monitoreo_drive():
                     save_state(new_state)
                     current_state = new_state
                     logger.info(f"Resumen: {added} archivos agregados, {updated} archivos actualizados.")
-                    chatbot.cargar_documentos()
+                    chatbot.cargar_documentos(force_reload=True)
                     chatbot.docs_actualizados.set()
                 else:
                     logger.info("No se detectaron cambios en los archivos.")

@@ -78,12 +78,12 @@ class RAGSystem:
             documents = loader.load()
             logger.info(f"Documento cargado: {file_path} con {len(documents)} elementos")
 
-            # Configurar el text splitter con chunks grandes y overlap grande
+            # Configurar el text splitter optimizado para mejor retrieval
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=4000,  # Chunks grandes para aprovechar ventana de contexto
-                chunk_overlap=800,  # Overlap grande para mantener contexto
+                chunk_size=2000,  # Chunks más manejables para mejor precisión
+                chunk_overlap=400,  # Overlap optimizado
                 length_function=len,
-                separators=["\n\n", "\n", ". ", " ", ""]
+                separators=["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ", ""]
             )
 
             # Dividir documentos en chunks
@@ -106,7 +106,7 @@ class RAGSystem:
             return []
 
     def update_vectorstore(self, documents_dir: str):
-        """Actualizar el vectorstore con documentos del directorio"""
+        """Actualizar el vectorstore incrementalmente solo con documentos nuevos o modificados"""
         if self.vectorstore is None:
             logger.error("Vectorstore no inicializado")
             return False
@@ -114,47 +114,84 @@ class RAGSystem:
         try:
             # Obtener todos los archivos PDF y DOCX del directorio
             supported_extensions = ['.pdf', '.docx', '.doc']
-            all_documents = []
-
+            
             if not os.path.exists(documents_dir):
                 logger.warning(f"Directorio de documentos no existe: {documents_dir}")
                 return False
 
+            # Obtener archivos existentes en vectorstore
+            try:
+                existing_docs = self.vectorstore.get()
+                existing_files = set()
+                if existing_docs and 'metadatas' in existing_docs:
+                    for metadata in existing_docs['metadatas']:
+                        if metadata and 'source_file' in metadata:
+                            existing_files.add(metadata['source_file'])
+                logger.info(f"Archivos ya en vectorstore: {len(existing_files)}")
+            except Exception as e:
+                logger.warning(f"No se pudo obtener archivos existentes del vectorstore: {e}")
+                existing_files = set()
+
+            # Identificar archivos que necesitan procesamiento
+            current_files = set()
+            new_documents = []
+            
             for root, dirs, files in os.walk(documents_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
                     file_extension = os.path.splitext(file)[1].lower()
                     
                     if file_extension in supported_extensions:
-                        logger.info(f"Procesando archivo para RAG: {file}")
-                        document_splits = self.load_and_split_document(file_path)
-                        all_documents.extend(document_splits)
+                        current_files.add(file)
+                        
+                        # Solo procesar si es nuevo o no está en vectorstore
+                        if file not in existing_files:
+                            logger.info(f"🆕 Procesando archivo NUEVO para RAG: {file}")
+                            document_splits = self.load_and_split_document(file_path)
+                            new_documents.extend(document_splits)
+                        else:
+                            logger.debug(f"⏭️ Archivo ya procesado, saltando: {file}")
 
-            if not all_documents:
-                logger.info("No se encontraron documentos PDF/DOCX para procesar")
-                return True
+            # Remover archivos que ya no existen del vectorstore
+            files_to_remove = existing_files - current_files
+            if files_to_remove:
+                logger.info(f"🗑️ Removiendo {len(files_to_remove)} archivos eliminados del vectorstore")
+                for file_to_remove in files_to_remove:
+                    try:
+                        # Buscar y eliminar documentos de este archivo
+                        docs = self.vectorstore.get(where={"source_file": file_to_remove})
+                        if docs and docs['ids']:
+                            self.vectorstore.delete(ids=docs['ids'])
+                            logger.info(f"🗑️ Archivo {file_to_remove} removido del vectorstore")
+                    except Exception as e:
+                        logger.error(f"Error removiendo archivo {file_to_remove}: {e}")
 
-            # Limpiar vectorstore existente
+            # Solo agregar documentos nuevos si los hay
+            if new_documents:
+                logger.info(f"📚 Agregando {len(new_documents)} chunks nuevos al vectorstore")
+                
+                # Agregar documentos al vectorstore en lotes
+                batch_size = 50
+                total_docs = len(new_documents)
+                
+                for i in range(0, total_docs, batch_size):
+                    batch = new_documents[i:i + batch_size]
+                    self.vectorstore.add_documents(batch)
+                    logger.info(f"✅ Procesado lote {i//batch_size + 1}: {len(batch)} documentos")
+
+                self.last_update = time.time()
+                logger.info(f"🎉 Vectorstore actualizado incrementalmente: +{total_docs} chunks nuevos")
+            else:
+                logger.info(f"✅ Vectorstore ya está actualizado, no hay archivos nuevos")
+
+            # Estadísticas finales
             try:
-                self.vectorstore.delete_collection()
-                logger.info("Vectorstore anterior limpiado")
+                final_docs = self.vectorstore.get()
+                total_chunks = len(final_docs['ids']) if final_docs and 'ids' in final_docs else 0
+                logger.info(f"📊 Total chunks en vectorstore: {total_chunks}")
             except Exception as e:
-                logger.warning(f"No se pudo limpiar vectorstore anterior: {e}")
+                logger.debug(f"No se pudo obtener estadísticas finales: {e}")
 
-            # Reinicializar vectorstore
-            self.initialize_vectorstore()
-
-            # Agregar documentos al vectorstore en lotes
-            batch_size = 50
-            total_docs = len(all_documents)
-            
-            for i in range(0, total_docs, batch_size):
-                batch = all_documents[i:i + batch_size]
-                self.vectorstore.add_documents(batch)
-                logger.info(f"Procesado lote {i//batch_size + 1}: {len(batch)} documentos")
-
-            self.last_update = time.time()
-            logger.info(f"Vectorstore actualizado con {total_docs} chunks de documentos")
             return True
 
         except Exception as e:
@@ -162,19 +199,40 @@ class RAGSystem:
             return False
 
     def retrieve_documents(self, query: str, k: int = 5) -> List[Document]:
-        """Recuperar documentos relevantes basados en la query"""
+        """Recuperar documentos relevantes basados en la query con logging detallado"""
         if self.retriever is None:
             logger.error("Retriever no inicializado")
             return []
 
         try:
-            # Actualizar el número de documentos a recuperar
-            self.retriever.search_kwargs["k"] = k
+            # Actualizar el número de documentos a recuperar (recuperar más para luego filtrar)
+            self.retriever.search_kwargs["k"] = k * 2  # Recuperar el doble para mejor selección
             
             retrieved_docs = self.retriever.invoke(query)
-            logger.info(f"Recuperados {len(retrieved_docs)} documentos para la query: {query[:50]}...")
             
-            return retrieved_docs
+            # Logging detallado de la recuperación
+            logger.info(f"🔍 RAG RETRIEVAL para query: '{query[:100]}...'")
+            logger.info(f"📊 Documentos recuperados: {len(retrieved_docs)}")
+            
+            if retrieved_docs:
+                # Log de cada documento recuperado con score si está disponible
+                for i, doc in enumerate(retrieved_docs[:k]):  # Solo mostrar los top k
+                    source = doc.metadata.get('source_file', 'desconocida')
+                    chunk_id = doc.metadata.get('chunk_id', 'N/A')
+                    content_preview = doc.page_content[:150].replace('\n', ' ')
+                    
+                    logger.info(f"  📄 [{i+1}] Fuente: {source} | Chunk: {chunk_id}")
+                    logger.info(f"      Contenido: {content_preview}...")
+                
+                # Filtrar a los mejores k documentos
+                final_docs = retrieved_docs[:k]
+                total_chars = sum(len(doc.page_content) for doc in final_docs)
+                logger.info(f"✅ RAG Context final: {len(final_docs)} docs, {total_chars} caracteres")
+                
+                return final_docs
+            else:
+                logger.warning("❌ No se recuperaron documentos del RAG")
+                return []
 
         except Exception as e:
             logger.error(f"Error al recuperar documentos: {e}")

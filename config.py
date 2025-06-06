@@ -23,7 +23,13 @@ LLM_TOP_K = 40
 LLM_TOP_P = 0.95
 LLM_MAX_OUTPUT_TOKENS = 2048
 SLACK_MAX_MESSAGE_LENGTH = 2900
-HISTORY_MAX_MESSAGES = 7
+HISTORY_MAX_MESSAGES = 5
+
+# Configuración de concurrencia y rendimiento
+LLM_POOL_SIZE = 15  # Pool de 15 instancias LLM para mejor concurrencia
+MAX_CONCURRENT_USERS = 25  # Máximo usuarios concurrentes
+USER_MEMORY_LIMIT = 5  # Máximo mensajes por usuario antes de reset
+CONNECTION_TIMEOUT = 120  # Timeout de conexiones LLM en segundos (reducido)
 
 # --- INICIO: Nueva lista de usuarios autorizados ---
 # Lista de IDs de usuario de Slack autorizados para interactuar con el bot
